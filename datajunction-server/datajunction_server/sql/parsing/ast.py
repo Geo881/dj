@@ -442,10 +442,13 @@ class Node(ABC):
         """
         Compile a DJ Node. By default, we call compile on all immediate children of this node.
         """
+        if self._is_compiled:
+            return
         for child in self.children:
             if not child.is_compiled():
                 child.compile(ctx)
                 child._is_compiled = True
+        self._is_compiled = True
 
     def is_compiled(self) -> bool:
         """
@@ -869,7 +872,7 @@ class Column(Aliasable, Named, Expression):
                 ctx.exception.errors.append(
                     DJError(
                         code=ErrorCode.INVALID_COLUMN,
-                        message=f"Column`{self}` does not exist on any valid table.",
+                        message=f"Column `{self}` does not exist on any valid table.",
                     ),
                 )
                 return
@@ -1329,10 +1332,13 @@ class BinaryOp(Operation):
         """
         Compile a DJ Node. By default, we call compile on all immediate children of this node.
         """
+        if self._is_compiled:
+            return
         for child in self.children:
             if not child.is_compiled():
                 child.compile(ctx)
                 child._is_compiled = True
+        self._is_compiled = True
 
 
 @dataclass(eq=False)
@@ -1420,10 +1426,16 @@ class Function(Named, Operation):
         # If not, create a new Function object
         return super().__new__(cls)
 
+    def __getnewargs__(self):
+        return self.name, self.args
+
     def __deepcopy__(self, memodict):
         return self
 
     def __str__(self) -> str:
+        if self.name.name.upper() in function_registry and self.is_runtime():
+            return self.function().substitute()
+
         over = f" {self.over} " if self.over else ""
         quantifier = f" {self.quantifier} " if self.quantifier else ""
         ret = (
@@ -1439,6 +1451,9 @@ class Function(Named, Operation):
     def is_aggregation(self) -> bool:
         return self.function().is_aggregation
 
+    def is_runtime(self) -> bool:
+        return self.function().is_runtime
+
     @property
     def type(self) -> ColumnType:
         return self.function().infer_type(*self.args)
@@ -1447,6 +1462,7 @@ class Function(Named, Operation):
         """
         Compile a function
         """
+        self._is_compiled = True
         for arg in self.args:
             if not arg.is_compiled():
                 arg.compile(ctx)
@@ -2230,6 +2246,8 @@ class Query(TableExpression):
         )
 
     def compile(self, ctx: CompileContext):
+        if self._is_compiled:
+            return
         self.apply(
             lambda node: node is not self
             and not node.is_compiled()
@@ -2237,6 +2255,7 @@ class Query(TableExpression):
         )
         for expr in self.select.projection:
             self._columns += expr.columns
+        self._is_compiled = True
 
     def bake_ctes(self) -> "Query":
         """
@@ -2307,6 +2326,7 @@ class Query(TableExpression):
     def build(  # pylint: disable=R0913,C0415
         self,
         session: Session,
+        memoized_queries: Dict[int, "Query"],
         build_criteria: Optional[BuildCriteria] = None,
     ):
         """
@@ -2315,7 +2335,7 @@ class Query(TableExpression):
         from datajunction_server.construction.build import _build_select_ast
 
         self.bake_ctes()  # pylint: disable=W0212
-        _build_select_ast(session, self.select, build_criteria)
+        _build_select_ast(session, self.select, memoized_queries, build_criteria)
         self.select.add_aliases_to_unnamed_columns()
 
         # Make the generated query deterministic

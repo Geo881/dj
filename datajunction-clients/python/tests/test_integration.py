@@ -1,26 +1,26 @@
 """
 Integration tests to be run against the latest full demo datajunction environment
 """
-# pylint: disable=too-many-lines
+# pylint: disable=too-many-lines,line-too-long,protected-access
 import namesgenerator
 import pandas
 import pytest
 
-from datajunction import DJReader
+from datajunction import DJBuilder
 from datajunction.exceptions import DJClientException
 from datajunction.models import AvailabilityState, ColumnAttribute, NodeMode, NodeStatus
 
 
 @pytest.mark.skipif("not config.getoption('integration')")
-def test_integration():  # pylint: disable=too-many-statements
+def test_integration():  # pylint: disable=too-many-statements,too-many-locals,line-too-long
     """
     Integration test
     """
-    dj = DJReader()  # pylint: disable=invalid-name
+    dj = DJBuilder()  # pylint: disable=invalid-name,line-too-long
 
     # Create a namespace
     namespace = f"integration.python.{namesgenerator.get_random_name()}"
-    dj.new_namespace(namespace)
+    dj.create_namespace(namespace)
 
     # List namespaces
     matching_namespace = None
@@ -30,7 +30,7 @@ def test_integration():  # pylint: disable=too-many-statements
     assert matching_namespace
 
     # Create a source
-    dj.new_source(
+    dj.create_source(
         name=f"{namespace}.repair_orders",
         description="Repair orders",
         catalog="warehouse",
@@ -45,13 +45,13 @@ def test_integration():  # pylint: disable=too-many-statements
             {"name": "dispatched_date", "type": "timestamp"},
             {"name": "dispatcher_id", "type": "int"},
         ],
-    ).save()
+    )
 
     # Get source
     dj.source(f"{namespace}.repair_orders")
 
     # Create a transform
-    dj.new_transform(
+    dj.create_transform(
         name=f"{namespace}.repair_orders_w_dispatchers",
         description="Repair orders that have a dispatcher",
         query=f"""
@@ -63,13 +63,13 @@ def test_integration():  # pylint: disable=too-many-statements
             FROM {namespace}.repair_orders
             WHERE dispatcher_id IS NOT NULL
         """,
-    ).save()
+    )
 
     # Get transform
     dj.transform(f"{namespace}.repair_orders_w_dispatchers")
 
     # Create a source and dimension node
-    dj.new_source(
+    dj.create_source(
         name=f"{namespace}.dispatchers",
         description="Different third party dispatcher companies that coordinate repairs",
         catalog="warehouse",
@@ -80,8 +80,8 @@ def test_integration():  # pylint: disable=too-many-statements
             {"name": "company_name", "type": "string"},
             {"name": "phone", "type": "string"},
         ],
-    ).save()
-    dj.new_dimension(
+    )
+    dj.create_dimension(
         name=f"{namespace}.all_dispatchers",
         description="All dispatchers",
         primary_key=["dispatcher_id"],
@@ -92,18 +92,17 @@ def test_integration():  # pylint: disable=too-many-statements
             phone
             FROM {namespace}.dispatchers
         """,
-    ).save()
+    )
 
     # Get dimension
     dj.dimension(f"{namespace}.all_dispatchers")
 
     # Create metrics
-    metric = dj.new_metric(
+    dj.create_metric(
         name=f"{namespace}.num_repair_orders",
         description="Number of repair orders",
         query=f"SELECT count(repair_order_id) FROM {namespace}.repair_orders",
     )
-    metric.save(NodeMode.PUBLISHED)
 
     # List metrics
     assert f"{namespace}.num_repair_orders" in dj.list_metrics()
@@ -130,7 +129,47 @@ def test_integration():  # pylint: disable=too-many-statements
     dj.metric(f"{namespace}.num_repair_orders").dimensions()
 
     # List common dimensions for multiple metrics
+    # names only
     common_dimensions = dj.common_dimensions(
+        metrics=[
+            "default.num_repair_orders",
+            "default.avg_repair_price",
+            "default.total_repair_cost",
+        ],
+    )
+    assert common_dimensions == [
+        "default.dispatcher.company_name",
+        "default.dispatcher.dispatcher_id",
+        "default.dispatcher.phone",
+        "default.hard_hat.address",
+        "default.hard_hat.birth_date",
+        "default.hard_hat.city",
+        "default.hard_hat.contractor_id",
+        "default.hard_hat.country",
+        "default.hard_hat.first_name",
+        "default.hard_hat.hard_hat_id",
+        "default.hard_hat.hire_date",
+        "default.hard_hat.last_name",
+        "default.hard_hat.manager",
+        "default.hard_hat.postal_code",
+        "default.hard_hat.state",
+        "default.hard_hat.title",
+        "default.municipality_dim.contact_name",
+        "default.municipality_dim.contact_title",
+        "default.municipality_dim.local_region",
+        "default.municipality_dim.municipality_id",
+        "default.municipality_dim.municipality_type_desc",
+        "default.municipality_dim.municipality_type_id",
+        "default.municipality_dim.state_id",
+        "default.repair_orders.repair_order_id",
+        "default.us_state.state_abbr",
+        "default.us_state.state_id",
+        "default.us_state.state_name",
+        "default.us_state.state_region",
+        "default.us_state.state_region_description",
+    ]
+    # with details
+    common_dimensions = dj.common_dimensions_with_details(
         metrics=[
             "default.num_repair_orders",
             "default.avg_repair_price",
@@ -370,6 +409,230 @@ def test_integration():  # pylint: disable=too-many-statements
         },
     ]
 
+    # List common metrics for multiple dimensions
+    # names only
+    common_metrics = dj.common_metrics(
+        dimensions=["default.date_dim", "default.repair_order"],
+    )
+    assert common_metrics == [
+        "default.num_repair_orders",
+        "default.avg_repair_price",
+        "default.total_repair_cost",
+        "default.total_repair_order_discounts",
+        "default.avg_repair_order_discounts",
+        "default.avg_time_to_dispatch",
+    ]
+    # with details
+    common_metrics = dj.common_metrics_with_details(
+        dimensions=["default.date_dim", "default.repair_order"],
+    )
+    assert common_metrics == [
+        {
+            "node_revision_id": 23,
+            "node_id": 23,
+            "type": "metric",
+            "name": "default.num_repair_orders",
+            "display_name": "Default: Num Repair Orders",
+            "version": "v1.0",
+            "status": "valid",
+            "mode": "published",
+            "catalog": {
+                "id": 1,
+                "uuid": "48474405-6e39-46f8-88b1-0bea868aa947",
+                "created_at": "2023-07-22T00:02:43.554751+00:00",
+                "updated_at": "2023-07-22T00:02:43.554752+00:00",
+                "extra_params": {},
+                "name": "warehouse",
+            },
+            "schema_": None,
+            "table": None,
+            "description": "Number of repair orders",
+            "query": "SELECT  count(repair_order_id) default_DOT_num_repair_orders \n FROM default.repair_orders\n\n",
+            "availability": None,
+            "columns": [
+                {
+                    "name": "default_DOT_num_repair_orders",
+                    "type": "bigint",
+                    "attributes": [],
+                    "dimension": None,
+                },
+            ],
+            "updated_at": "2023-07-22T00:02:51.460733+00:00",
+            "materializations": [],
+            "parents": [{"name": "default.repair_orders"}],
+        },
+        {
+            "node_revision_id": 24,
+            "node_id": 24,
+            "type": "metric",
+            "name": "default.avg_repair_price",
+            "display_name": "Default: Avg Repair Price",
+            "version": "v1.0",
+            "status": "valid",
+            "mode": "published",
+            "catalog": {
+                "id": 1,
+                "uuid": "48474405-6e39-46f8-88b1-0bea868aa947",
+                "created_at": "2023-07-22T00:02:43.554751+00:00",
+                "updated_at": "2023-07-22T00:02:43.554752+00:00",
+                "extra_params": {},
+                "name": "warehouse",
+            },
+            "schema_": None,
+            "table": None,
+            "description": "Average repair price",
+            "query": "SELECT  avg(price) default_DOT_avg_repair_price \n FROM default.repair_order_details\n\n",
+            "availability": None,
+            "columns": [
+                {
+                    "name": "default_DOT_avg_repair_price",
+                    "type": "double",
+                    "attributes": [],
+                    "dimension": None,
+                },
+            ],
+            "updated_at": "2023-07-22T00:02:51.616490+00:00",
+            "materializations": [],
+            "parents": [{"name": "default.repair_order_details"}],
+        },
+        {
+            "node_revision_id": 25,
+            "node_id": 25,
+            "type": "metric",
+            "name": "default.total_repair_cost",
+            "display_name": "Default: Total Repair Cost",
+            "version": "v1.0",
+            "status": "valid",
+            "mode": "published",
+            "catalog": {
+                "id": 1,
+                "uuid": "48474405-6e39-46f8-88b1-0bea868aa947",
+                "created_at": "2023-07-22T00:02:43.554751+00:00",
+                "updated_at": "2023-07-22T00:02:43.554752+00:00",
+                "extra_params": {},
+                "name": "warehouse",
+            },
+            "schema_": None,
+            "table": None,
+            "description": "Total repair cost",
+            "query": "SELECT  sum(price) default_DOT_total_repair_cost \n FROM default.repair_order_details\n\n",
+            "availability": None,
+            "columns": [
+                {
+                    "name": "default_DOT_total_repair_cost",
+                    "type": "double",
+                    "attributes": [],
+                    "dimension": None,
+                },
+            ],
+            "updated_at": "2023-07-22T00:02:51.834912+00:00",
+            "materializations": [],
+            "parents": [{"name": "default.repair_order_details"}],
+        },
+        {
+            "node_revision_id": 27,
+            "node_id": 27,
+            "type": "metric",
+            "name": "default.total_repair_order_discounts",
+            "display_name": "Default: Total Repair Order Discounts",
+            "version": "v1.0",
+            "status": "valid",
+            "mode": "published",
+            "catalog": {
+                "id": 1,
+                "uuid": "48474405-6e39-46f8-88b1-0bea868aa947",
+                "created_at": "2023-07-22T00:02:43.554751+00:00",
+                "updated_at": "2023-07-22T00:02:43.554752+00:00",
+                "extra_params": {},
+                "name": "warehouse",
+            },
+            "schema_": None,
+            "table": None,
+            "description": "Total repair order discounts",
+            "query": "SELECT  sum(price * discount) default_DOT_total_repair_order_discounts \n FROM default.repair_order_details\n\n",
+            "availability": None,
+            "columns": [
+                {
+                    "name": "default_DOT_total_repair_order_discounts",
+                    "type": "double",
+                    "attributes": [],
+                    "dimension": None,
+                },
+            ],
+            "updated_at": "2023-07-22T00:02:52.276818+00:00",
+            "materializations": [],
+            "parents": [{"name": "default.repair_order_details"}],
+        },
+        {
+            "node_revision_id": 28,
+            "node_id": 28,
+            "type": "metric",
+            "name": "default.avg_repair_order_discounts",
+            "display_name": "Default: Avg Repair Order Discounts",
+            "version": "v1.0",
+            "status": "valid",
+            "mode": "published",
+            "catalog": {
+                "id": 1,
+                "uuid": "48474405-6e39-46f8-88b1-0bea868aa947",
+                "created_at": "2023-07-22T00:02:43.554751+00:00",
+                "updated_at": "2023-07-22T00:02:43.554752+00:00",
+                "extra_params": {},
+                "name": "warehouse",
+            },
+            "schema_": None,
+            "table": None,
+            "description": "Total repair order discounts",
+            "query": "SELECT  avg(price * discount) default_DOT_avg_repair_order_discounts \n FROM default.repair_order_details\n\n",
+            "availability": None,
+            "columns": [
+                {
+                    "name": "default_DOT_avg_repair_order_discounts",
+                    "type": "double",
+                    "attributes": [],
+                    "dimension": None,
+                },
+            ],
+            "updated_at": "2023-07-22T00:02:52.428709+00:00",
+            "materializations": [],
+            "parents": [{"name": "default.repair_order_details"}],
+        },
+        {
+            "node_revision_id": 29,
+            "node_id": 29,
+            "type": "metric",
+            "name": "default.avg_time_to_dispatch",
+            "display_name": "Default: Avg Time To Dispatch",
+            "version": "v1.0",
+            "status": "valid",
+            "mode": "published",
+            "catalog": {
+                "id": 1,
+                "uuid": "48474405-6e39-46f8-88b1-0bea868aa947",
+                "created_at": "2023-07-22T00:02:43.554751+00:00",
+                "updated_at": "2023-07-22T00:02:43.554752+00:00",
+                "extra_params": {},
+                "name": "warehouse",
+            },
+            "schema_": None,
+            "table": None,
+            "description": "Average time to dispatch a repair order",
+            "query": "SELECT  avg(dispatched_date - order_date) default_DOT_avg_time_to_dispatch \n FROM default.repair_orders\n\n",
+            "availability": None,
+            "columns": [
+                {
+                    "name": "default_DOT_avg_time_to_dispatch",
+                    "type": "date",
+                    "attributes": [],
+                    "dimension": None,
+                },
+            ],
+            "updated_at": "2023-07-22T00:02:52.617142+00:00",
+            "materializations": [],
+            "parents": [{"name": "default.repair_orders"}],
+        },
+    ]
+
     # Get SQL for a set of metrics and dimensions
     query = dj.sql(
         metrics=[
@@ -544,7 +807,7 @@ def test_integration():  # pylint: disable=too-many-statements
     pandas.testing.assert_frame_equal(result, expected_df)
 
     # Create a transform 2 downstream from a transform 1
-    dj.new_transform(
+    dj.create_transform(
         name=f"{namespace}.repair_orders_w_hard_hats",
         description="Repair orders that have a hard hat assigned",
         query=f"""
@@ -556,7 +819,7 @@ def test_integration():  # pylint: disable=too-many-statements
             FROM {namespace}.repair_orders_w_dispatchers
             WHERE hard_hat_id IS NOT NULL
         """,
-    ).save()
+    )
 
     # Get transform 2 that's downstream from transform 1 and make sure it's valid
     transform_2 = dj.transform(f"{namespace}.repair_orders_w_hard_hats")
@@ -594,7 +857,7 @@ def test_integration():  # pylint: disable=too-many-statements
     ]
 
     # Create a draft transform 4 that's downstream from a not yet created transform 3
-    dj.new_transform(
+    dj.create_transform(
         name=f"{namespace}.repair_orders_w_repair_order_id",
         description="Repair orders without a null ID",
         query=f"""
@@ -606,17 +869,18 @@ def test_integration():  # pylint: disable=too-many-statements
             FROM {namespace}.repair_orders_w_municipalities
             WHERE repair_order_id IS NOT NULL
         """,
-    ).save(mode=NodeMode.DRAFT)
+        mode=NodeMode.DRAFT,
+    )
     transform_4 = dj.transform(f"{namespace}.repair_orders_w_repair_order_id")
-    transform_4.sync()
+    transform_4.refresh()
     assert transform_4.mode == NodeMode.DRAFT
     assert transform_4.status == NodeStatus.INVALID
     # Check that transform 4 is invalid because transform 3 does not exist
     with pytest.raises(DJClientException):
-        transform_4.check()
+        transform_4._validate()
 
     # Create a draft transform 3 that's downstream from transform 2
-    dj.new_transform(
+    dj.create_transform(
         name=f"{namespace}.repair_orders_w_municipalities",
         description="Repair orders that have a municipality listed",
         query=f"""
@@ -628,14 +892,15 @@ def test_integration():  # pylint: disable=too-many-statements
             FROM {namespace}.repair_orders_w_hard_hats
             WHERE municipality_id IS NOT NULL
         """,
-    ).save(NodeMode.DRAFT)
+        mode=NodeMode.DRAFT,
+    )
     transform_3 = dj.transform(f"{namespace}.repair_orders_w_municipalities")
     # Check that transform 3 is valid
-    assert transform_3.check() == NodeStatus.VALID
+    assert transform_3._validate() == NodeStatus.VALID
 
     # Check that transform 4 is now valid after transform 3 was created
-    transform_4.sync()
-    assert transform_4.check() == NodeStatus.VALID
+    transform_4.refresh()
+    assert transform_4._validate() == NodeStatus.VALID
 
     # Check that publishing transform 3 works
     transform_3.publish()

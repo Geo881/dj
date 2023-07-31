@@ -11,7 +11,7 @@ DataJunction (DJ) is currently supported in Python 3.8, 3.9, and 3.10. It's reco
 
     $ pyenv virtualenv 3.8 dj  # or 3.9/3.10
 
-Then you can pick any of the components you want to develop on, say ``cd datajunction-server`` or ``cd client/python``,
+Then you can pick any of the components you want to develop on, say ``cd datajunction-server`` or ``cd datajunction-clients/python``,
 install required dependencies with ``pdm install`` and call ``make test`` to run all the unit tests for that component.
 
 DJ relies heavily on these libraries:
@@ -395,6 +395,19 @@ Input the EBNF into https://bottlecaps.de/rr/ui
 
 Common Issues
 ===================
+
+Docker missing dependencies
+----------------------------------------
+
+If you are still new to docker development... you may run into this. If someone else modified / added new dependencies in some
+of the DJ conatainers, you may notice an error like:
+
+.. code-block:: sh
+  dj            | ModuleNotFoundError: No module named 'sse_starlette'
+
+Remember it is not your local env that needs to be patched but one of the DJ docker conatainers. 
+Try running `docker compose build` and your `docker compose up` should work just fine.
+
 
 Alembic migration error
 ----------------------------------------
